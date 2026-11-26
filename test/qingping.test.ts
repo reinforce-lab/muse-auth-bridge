@@ -82,7 +82,7 @@ describe("qingping adapter", () => {
         })) as unknown as typeof fetch;
     const authRes = await qingpingRoutes.listDevices({ env, fetchFn: statusFetch(401) });
     expect(authRes.status).toBe(502);
-    expect(((await authRes.json()) as { error: { code: string } }).error.code).toBe("vendor_auth_failed");
+    expect(((await authRes.json()) as { error: { code: string } }).error.code).toBe("vendor_token_refused");
     const serverRes = await qingpingRoutes.listDevices({ env, fetchFn: statusFetch(503) });
     expect(serverRes.status).toBe(502);
     expect(((await serverRes.json()) as { error: { code: string } }).error.code).toBe("vendor_server_error");

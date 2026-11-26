@@ -181,11 +181,11 @@ async function call(ctx: AdapterContext, path: string, params: Record<string, st
         case "client":
           return errorJson(502, "vendor_client_error", `Qingping token endpoint rejected the request (${err.message})`);
         case "auth":
-          return errorJson(502, "vendor_auth_failed", `Could not obtain a Qingping access token (${err.message})`);
+          return errorJson(502, "vendor_token_refused", `Could not obtain a Qingping access token (${err.message})`);
       }
     }
     const message = err instanceof Error ? err.message : "unknown";
-    return errorJson(502, "vendor_auth_failed", `Could not obtain a Qingping access token (${message})`);
+    return errorJson(502, "vendor_token_refused", `Could not obtain a Qingping access token (${message})`);
   };
   const attempt = async (token: string): Promise<Response | null> => {
     try {

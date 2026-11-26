@@ -57,7 +57,7 @@ export async function passthrough(res: Response): Promise<Response> {
   } catch {
     return json(
       { error: { code: "vendor_non_json", message: "Vendor returned a non-JSON response" }, vendorStatus: res.status, body: text.slice(0, 500) },
-      res.status >= 400 ? res.status : 502,
+      502,
     );
   }
 }
