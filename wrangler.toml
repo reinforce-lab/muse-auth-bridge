@@ -1,0 +1,24 @@
+name = "muse-auth-bridge"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# --- Non-secret configuration -------------------------------------------
+# Secrets (tokens, vendor keys) are NEVER written here.
+# Set them with:  wrangler secret put <NAME>     (see README)
+[vars]
+# Requests allowed per token per minute (fixed window, per isolate).
+RATE_LIMIT_PER_MINUTE = "60"
+# Emergency brake, static form: set to "true" to refuse every request.
+BRIDGE_DISABLED = "false"
+# Qingping OAuth scope. The vendor default for the personal developer API
+# is "device"; override only if your developer account says otherwise.
+QINGPING_SCOPE = "device"
+
+# --- Optional: durable breaker + token cache ----------------------------
+# Uncomment after `wrangler kv namespace create BRIDGE_KV` and put the id.
+# Without KV the breaker still works via BRIDGE_DISABLED and the admin API
+# keeps its state in-isolate (best effort, resets on isolate recycle).
+# [[kv_namespaces]]
+# binding = "BRIDGE_KV"
+# id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"

@@ -1,0 +1,15 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit real values.
+# .dev.vars is git-ignored.
+
+# Bridge tokens — use long random values, one per role.
+BRIDGE_TOKEN_READ="dev-read-token-change-me"
+BRIDGE_TOKEN_WRITE="dev-write-token-change-me"
+BRIDGE_TOKEN_ADMIN="dev-admin-token-change-me"
+
+# SwitchBot (app > Profile > Preferences > Developer Options)
+SWITCHBOT_TOKEN=""
+SWITCHBOT_SECRET=""
+
+# Qingping / ClearGrass (developer.qingping.co > Access Management)
+QINGPING_APP_KEY=""
+QINGPING_APP_SECRET=""
