@@ -132,10 +132,12 @@ Errors are JSON: `{ "error": { "code": "...", "message": "..." } }`
 (401 unauthorized — always the *bridge* token; 403 wrong role or not
 allow-listed, 429 rate limited, 501 adapter not configured, 503 breaker
 on). A vendor refusing the bridge's own credentials is reported as
-**502 `vendor_auth_error`** (vendor status and body preserved in the
-payload), never as 401, so the two failure kinds stay distinguishable.
-SwitchBot errors reported inside an HTTP 200 body (`statusCode != 100`)
-likewise surface as 502 `vendor_error`.
+**502 `vendor_auth_error`**, and a vendor rate limit as **502
+`vendor_rate_limited`** — in general, vendor 4xx answers are mapped to
+502 with a `vendor_*` code (vendor status and body preserved in the
+payload), never returned as-is, so the two failure kinds stay
+distinguishable. SwitchBot errors reported inside an HTTP 200 body
+(`statusCode != 100`) likewise surface as 502 `vendor_error`.
 
 ## Quick start
 

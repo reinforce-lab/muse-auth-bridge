@@ -15,7 +15,7 @@ export interface Env {
   SWITCHBOT_TOKEN?: string;
   SWITCHBOT_SECRET?: string;
   SWITCHBOT_API_BASE?: string;
-  /** Comma-separated "deviceId:command" pairs ("*" wildcards). Unset = no commands allowed. */
+  /** Comma-separated "deviceId:command[:commandType]" entries ("*" wildcards). Unset = no commands allowed. */
   SWITCHBOT_ALLOWED_COMMANDS?: string;
   /** Comma-separated scene ids ("*" = all). Unset = no scenes allowed. */
   SWITCHBOT_ALLOWED_SCENES?: string;

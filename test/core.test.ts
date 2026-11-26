@@ -112,4 +112,21 @@ describe("breaker KV robustness", () => {
     await expect(isBreakerOn(putFails)).resolves.toBe(true);
     resetBreakerForTest();
   });
+
+  it("caches the absent-key (null) case too, so fresh namespaces stop re-reading KV", async () => {
+    resetBreakerForTest();
+    let gets = 0;
+    const freshEnv: Env = {
+      BRIDGE_KV: kvStub({
+        get: async () => {
+          gets += 1;
+          return null;
+        },
+      }),
+    };
+    await expect(isBreakerOn(freshEnv)).resolves.toBe(false);
+    await expect(isBreakerOn(freshEnv)).resolves.toBe(false);
+    expect(gets).toBe(1);
+    resetBreakerForTest();
+  });
 });

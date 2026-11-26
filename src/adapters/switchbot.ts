@@ -90,20 +90,35 @@ async function call(ctx: AdapterContext, path: string, init: RequestInit = {}): 
  *
  * A write token must not become a universal remote: SwitchBot includes
  * locks and keypads, whose unlock commands would otherwise be one
- * leaked token away. Commands are allowed per (deviceId, command)
- * pair, scenes per scene id. Configure in wrangler.toml [vars]:
+ * leaked token away. Commands are allowed per (deviceId, command,
+ * commandType) triple, scenes per scene id. Configure in wrangler.toml
+ * [vars]:
  *   SWITCHBOT_ALLOWED_COMMANDS = "deviceId:turnOn,deviceId:turnOff"
  *   SWITCHBOT_ALLOWED_SCENES   = "sceneId1,sceneId2"
- * "*" matches any device / command / scene on that side of the pair.
+ * "*" matches any device / command on that side of the pair.
+ *
+ * The commandType segment matters: with commandType "customize", a
+ * command name addresses a learned infrared custom button instead of
+ * the device command of the same name. A two-segment entry therefore
+ * allows commandType "command" only; "customize" must be written out
+ * explicitly as a third segment:
+ *   "deviceId:turnOn:customize"
  */
-export function commandAllowed(raw: string | undefined, deviceId: string, command: string): boolean {
+export function commandAllowed(
+  raw: string | undefined,
+  deviceId: string,
+  command: string,
+  commandType = "command",
+): boolean {
   if (!raw) return false;
   for (const pair of raw.split(",")) {
-    const idx = pair.lastIndexOf(":");
-    if (idx <= 0) continue;
-    const device = pair.slice(0, idx).trim();
-    const cmd = pair.slice(idx + 1).trim();
-    if ((device === "*" || device === deviceId) && (cmd === "*" || cmd === command)) return true;
+    const parts = pair.split(":").map((s) => s.trim());
+    if (parts.length < 2 || parts.length > 3) continue;
+    const [device, cmd] = parts;
+    const type = parts[2] ?? "command";
+    if ((device === "*" || device === deviceId) && (cmd === "*" || cmd === command) && type === commandType) {
+      return true;
+    }
   }
   return false;
 }
@@ -140,11 +155,16 @@ export const switchBotRoutes = {
     if (typeof rec?.command !== "string" || rec.command.length === 0) {
       return errorJson(400, "invalid_command", "Body must include a non-empty string field: command");
     }
-    if (!commandAllowed(env.SWITCHBOT_ALLOWED_COMMANDS, deviceId, rec.command)) {
+    const rawType = (body as { commandType?: unknown }).commandType;
+    if (rawType !== undefined && typeof rawType !== "string") {
+      return errorJson(400, "invalid_command", "Field commandType must be a string when present");
+    }
+    const commandType = typeof rawType === "string" && rawType.length > 0 ? rawType : "command";
+    if (!commandAllowed(env.SWITCHBOT_ALLOWED_COMMANDS, deviceId, rec.command, commandType)) {
       return errorJson(
         403,
         "command_not_allowed",
-        `Command "${rec.command}" for this device is not on the bridge allow-list (SWITCHBOT_ALLOWED_COMMANDS)`,
+        `Command "${rec.command}" (${commandType}) for this device is not on the bridge allow-list (SWITCHBOT_ALLOWED_COMMANDS)`,
       );
     }
     // Deliberately an allow-listed shape, not a raw proxy: the bridge only
@@ -152,7 +172,7 @@ export const switchBotRoutes = {
     const payload = {
       command: rec.command,
       parameter: (body as { parameter?: unknown }).parameter ?? "default",
-      commandType: (body as { commandType?: unknown }).commandType ?? "command",
+      commandType,
     };
     return call(ctx, `/v1.1/devices/${encodeURIComponent(deviceId)}/commands`, {
       method: "POST",

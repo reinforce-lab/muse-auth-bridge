@@ -140,4 +140,41 @@ describe("switchbot write allow-lists", () => {
     const ok = await switchBotRoutes.executeScene({ env: allowedEnv, fetchFn: jsonFetch(200, { statusCode: 100 }) }, "scene1");
     expect(ok.status).toBe(200);
   });
+
+  it("maps a vendor 429 to 502 vendor_rate_limited, not the bridge's own 429", async () => {
+    const env: Env = { SWITCHBOT_TOKEN: "tok", SWITCHBOT_SECRET: "sec" };
+    const res = await switchBotRoutes.listDevices({ env, fetchFn: jsonFetch(429, { message: "rate limited" }) });
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as { error: { code: string }; vendorStatus: number };
+    expect(body.error.code).toBe("vendor_rate_limited");
+    expect(body.vendorStatus).toBe(429);
+  });
+
+  it("commandType is part of the allow-list key: customize needs an explicit entry", async () => {
+    expect(commandAllowed("dev1:turnOn", "dev1", "turnOn")).toBe(true);
+    expect(commandAllowed("dev1:turnOn", "dev1", "turnOn", "customize")).toBe(false);
+    expect(commandAllowed("dev1:turnOn:customize", "dev1", "turnOn", "customize")).toBe(true);
+    expect(commandAllowed("dev1:turnOn:customize", "dev1", "turnOn")).toBe(false);
+
+    const base: Env = {
+      SWITCHBOT_TOKEN: "tok",
+      SWITCHBOT_SECRET: "sec",
+      SWITCHBOT_ALLOWED_COMMANDS: "dev1:turnOn",
+    };
+    const fetchFn = jsonFetch(200, { statusCode: 100, body: {} });
+    const customizeReq = new Request("https://bridge.example/", {
+      method: "POST",
+      body: JSON.stringify({ command: "turnOn", commandType: "customize" }),
+      headers: { "content-type": "application/json" },
+    });
+    expect((await switchBotRoutes.deviceCommand({ env: base, fetchFn }, "dev1", customizeReq)).status).toBe(403);
+
+    const explicit: Env = { ...base, SWITCHBOT_ALLOWED_COMMANDS: "dev1:turnOn:customize" };
+    const customizeReq2 = new Request("https://bridge.example/", {
+      method: "POST",
+      body: JSON.stringify({ command: "turnOn", commandType: "customize" }),
+      headers: { "content-type": "application/json" },
+    });
+    expect((await switchBotRoutes.deviceCommand({ env: explicit, fetchFn }, "dev1", customizeReq2)).status).toBe(200);
+  });
 });

@@ -18,6 +18,8 @@ QINGPING_SCOPE = "device"
 # which is the safe default: a write token alone cannot operate anything,
 # and in particular cannot unlock a SwitchBot Lock you may add later.
 # SWITCHBOT_ALLOWED_COMMANDS = "deviceId:turnOn,deviceId:turnOff"
+# (an entry allows commandType "command" only; write a third segment,
+#  "deviceId:turnOn:customize", to allow infrared custom buttons)
 # SWITCHBOT_ALLOWED_SCENES = "sceneId1,sceneId2"
 
 # --- Optional: durable breaker + token cache ----------------------------

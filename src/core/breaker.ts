@@ -33,10 +33,11 @@ export async function isBreakerOn(env: Env): Promise<boolean> {
     if (kvCache && now - kvCache.at < CACHE_MS) return kvCache.value;
     try {
       const v = await env.BRIDGE_KV.get(KV_KEY);
-      if (v !== null) {
-        kvCache = { value: v === "1", at: now };
-        return kvCache.value;
-      }
+      // Cache the absent key too: on a fresh namespace the flag has
+      // never been written, and without caching that case every
+      // unauthenticated request would still hit KV.
+      kvCache = { value: v === "1", at: now };
+      return kvCache.value;
     } catch {
       if (kvCache) return kvCache.value;
     }
