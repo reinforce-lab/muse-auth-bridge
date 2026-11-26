@@ -60,6 +60,58 @@ key rotation as the emergency brake).
 and the fixed-length digests compared in constant time, so comparisons
 leak neither length nor prefix.
 
+## Skills travel with tools now — and a question behind that
+
+MCP servers have started shipping skills next to their tools: the agent
+fetches the current how-to from the server, at the moment it needs it,
+instead of relying on a document someone saved earlier and quietly let
+go stale. This bridge intends to follow that pattern — its own skill is
+a roadmap item (see `DESIGN.md`) — because the mechanics of using a
+bridge, such as which token belongs in which connector and when to flip
+the breaker, are exactly the kind of thing that should travel with the
+tool.
+
+Spending a little time with that idea raises a quieter question: who
+writes the skill that matters?
+
+**The judgments came from practice, not from the vendor.** A shipped
+skill describes the intended use of a tool. The decisions that shaped
+this project were written the other way around, out of use itself: when
+a tool has no reputation to lean on, read its source before trusting
+it; when nothing guarantees that the distributed binary matches that
+source, build it yourself; when a leak would most likely go unnoticed
+anyway, keep one breaker you can actually flip instead of a lifecycle
+you cannot operate. Chains of judgment like these are not something a
+vendor ships. They are a different species of skill, grown on the
+user's side, and this repository treats them as first-class material —
+the runbook is where they live here.
+
+**The centre of integration is a person, not a server.** A per-server
+skill optimises one tool at a time. The layer this bridge works in is a
+different one: several services gathered around a single person's life
+— their home, their sensors, their work — where that person's own agent
+holds the whole picture. A skill fetched per server cannot describe
+that layer. The bridge is a small part that works inside it.
+
+**Private data stays on the person's side of the line.** In that
+picture, the complete private data lives inside the user's own agent.
+The services, and this bridge, do a narrower job: translate
+credentials, and hand service data across. Deciding where that boundary
+sits is a design choice, made before any skill is written.
+
+**Freshness is not the only virtue.** Keeping one canonical skill
+always up to date is the right optimisation for a maintained product.
+For personal software there is another one: build it, use it, tear it
+down, rebuild it — as long as the underlying records stay in a form a
+person can read, nothing precious is lost when a version is discarded.
+This project leans toward the second. The canonical thing worth keeping
+is the record of what was decided and why, not any single version of
+the tooling.
+
+None of this is an argument against shipping skills with tools; this
+bridge plans to do exactly that. It is a note about which skills those
+are — and which ones only practice can write.
+
 ## Routes
 
 | Method | Path | Role | Notes |
