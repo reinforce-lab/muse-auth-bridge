@@ -1,0 +1,111 @@
+# 運用ランブック
+
+このドキュメントは、デプロイした Muse Auth Bridge を運用するための手順書です。
+設計の考え方は `README.md` と `DESIGN.md` にあります。ここには「何かあったときに、どの順番で何をするか」だけを書きます。
+
+## 1. デプロイ
+
+前提: Cloudflare アカウントと、Worker に入れるシークレット一式。
+
+```bash
+npx wrangler login
+
+# 橋のトークン（役割ごとに1つ、長いランダム値。例: openssl rand -hex 32）
+npx wrangler secret put BRIDGE_TOKEN_READ
+npx wrangler secret put BRIDGE_TOKEN_WRITE
+npx wrangler secret put BRIDGE_TOKEN_ADMIN
+
+# 使うアダプタの分だけ
+npx wrangler secret put SWITCHBOT_TOKEN
+npx wrangler secret put SWITCHBOT_SECRET
+npx wrangler secret put QINGPING_APP_KEY
+npx wrangler secret put QINGPING_APP_SECRET
+
+# 推奨: ブレイカー状態を永続化する KV
+npx wrangler kv namespace create BRIDGE_KV   # 出力された id を wrangler.toml に書く
+
+npx wrangler deploy
+```
+
+デプロイ直後に必ず疎通テストを走らせる（次節）。
+
+## 2. 疎通テスト（スモークテスト）
+
+```bash
+BRIDGE_URL=https://muse-auth-bridge.<あなたのサブドメイン>.workers.dev \
+BRIDGE_TOKEN_READ=... BRIDGE_TOKEN_WRITE=... BRIDGE_TOKEN_ADMIN=... \
+node scripts/smoke-test.mjs
+```
+
+確認する内容:
+
+1. `/health` が 200 で返る
+2. トークンなしのリクエストが 401 で拒否される
+3. read トークンで読み取りルートが通る（アダプタ未設定なら 501、それも疎通の証拠）
+4. read トークンでは書き込みルートが使えない（403）
+5. **ブレイカー訓練**: admin でブレイカーを入れる → 全ルートと `/health` が 503 になる → admin で解除できる（解除ルートはブレイカー中も届く設計）→ `/health` が 200 に戻る
+
+ブレイカー訓練を省く場合は `--no-breaker` を付ける。訓練は一瞬だけ全停止するので、本番で走らせるなら利用していない時間帯に。
+
+ローカルでも同じスクリプトが使える（`npm run dev` で起動し、`BRIDGE_URL=http://localhost:8787`、トークンは `.dev.vars` の値）。
+
+## 3. 漏洩を疑ったときの手順（ブレイカー）
+
+合言葉は「**止めてから、調べる**」。細かい失効手続きを漏洩の最中に思い出す必要はない。関所は1か所しかない。
+
+### 手順
+
+1. **ブレイカーを入れる**（全サービスが即座に止まる）
+
+   ```bash
+   curl -X POST -H "Authorization: Bearer <ADMINトークン>" \
+     https://muse-auth-bridge.<サブドメイン>.workers.dev/admin/breaker/on
+   ```
+
+   Cloudflare の画面から止める方法もある: Workers の設定で変数 `BRIDGE_DISABLED` を `true` にして再デプロイする。admin トークン自体が漏れた可能性がある場合はこちらを使う（ブレイカーの解除にも admin が要るため）。
+
+2. **橋のトークンを全部入れ替える**
+
+   ```bash
+   npx wrangler secret put BRIDGE_TOKEN_READ    # 新しい値
+   npx wrangler secret put BRIDGE_TOKEN_WRITE
+   npx wrangler secret put BRIDGE_TOKEN_ADMIN
+   ```
+
+   コネクタ側の登録値も新しい read トークンに更新する。重なり期間が要る場合は、カンマ区切りで旧・新を併記してから旧を消す。
+
+3. **漏れた範囲に応じて、ベンダー側の秘密も入れ替える**
+   - 橋のトークンだけが漏れた疑い: 手順2までで足りる。ベンダーの秘密は Worker の外に出ていない。
+   - Worker のシークレット自体が漏れた疑い: ベンダー側で再発行する（SwitchBot はアプリの開発者オプションでトークン再発行、Qingping は開発者コンソールで App Secret 再発行）→ `wrangler secret put` で入れ替える。
+
+4. **ブレイカーを解除する**
+
+   ```bash
+   curl -X POST -H "Authorization: Bearer <新しいADMINトークン>" \
+     https://muse-auth-bridge.<サブドメイン>.workers.dev/admin/breaker/off
+   ```
+
+5. **スモークテストで復旧を確認する**（第2節）。
+
+### 効き方の確認済み事項
+
+- ブレイカーは認証より前に効く。正規のトークンでも 503 になる。
+- 例外は `/admin/breaker/*` のみ（admin トークン必須）。解除できないブレイカーは罠になるため、この例外は意図的な設計。
+- KV を付けていない場合、ブレイカー状態は isolate 内にしか残らない。再配置で消えることがあるので、本番では KV を付けるか、`BRIDGE_DISABLED` 変数と併用する。
+
+## 4. 日常のローテーション
+
+- 橋のトークン: 漏洩時が本番。定期ローテーションは必須ではない（個人運用で回らない仕組みは置かない、という設計判断）。
+- ベンダーの秘密: ベンダー側の都合（再発行したら旧値が死ぬ等）に従う。
+- 変更したら必ずスモークテストを走らせる。
+
+## 5. 困ったときの見分け方
+
+| 症状 | まず見る場所 |
+|---|---|
+| 全部 503 | ブレイカーが入っていないか（`/health` の `breakerOn`、`/admin/status`） |
+| 全部 401 | コネクタに登録したトークンと Worker のシークレットの不一致 |
+| 読み取りは通るが書き込みが 403 | read トークンで書き込みルートを叩いている（役割の分離どおり） |
+| 特定アダプタだけ 501 | そのベンダーのシークレットが Worker に未設定 |
+| 特定アダプタだけ 502（Qingping） | トークン取得の失敗。App Key / Secret の再発行有無を確認 |
+| 429 | レート制限。`RATE_LIMIT_PER_MINUTE` の値と、想定外の呼び出し元を確認 |

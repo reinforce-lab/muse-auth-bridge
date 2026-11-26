@@ -122,6 +122,25 @@ Then register the deployed URL as a custom connector / API tool in your
 agent platform, with the **read** token as its Bearer credential, and call
 the routes above. See `examples/` for a connector sketch.
 
+## Operations
+
+Day-2 operations live in [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
+(Japanese): the deployment checklist, the leak response procedure built
+around the breaker, and troubleshooting.
+
+A smoke test that also performs the **breaker drill** (flip it on, watch
+everything answer 503, flip it off, watch recovery) ships in
+[`scripts/smoke-test.mjs`](scripts/smoke-test.mjs):
+
+```bash
+BRIDGE_URL=https://muse-auth-bridge.<your-subdomain>.workers.dev \
+BRIDGE_TOKEN_READ=... BRIDGE_TOKEN_WRITE=... BRIDGE_TOKEN_ADMIN=... \
+node scripts/smoke-test.mjs          # add --no-breaker to skip the drill
+```
+
+Run it after every deploy and every secret rotation. It also works
+against a local `wrangler dev` instance.
+
 ## Adapters
 
 An adapter is a small module under `src/adapters/` that knows one vendor's
