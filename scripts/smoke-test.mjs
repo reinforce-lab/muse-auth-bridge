@@ -16,6 +16,13 @@
  * The drill always tries to leave the breaker OFF, even on failure.
  * Skip it with --no-breaker (e.g. when no admin token is available).
  *
+ * Note on the KV-backed breaker: Cloudflare KV is eventually
+ * consistent, so a breaker flip can take up to ~60s to be visible at
+ * every edge location. The transition checks below therefore poll
+ * until the expected status shows up (90s budget) instead of asserting
+ * on the first response. When an instant, everywhere-at-once stop is
+ * required, use the BRIDGE_DISABLED variable + redeploy instead.
+ *
  * Usage:
  *   BRIDGE_URL=https://muse-auth-bridge.<subdomain>.workers.dev \
  *   BRIDGE_TOKEN_READ=... BRIDGE_TOKEN_WRITE=... BRIDGE_TOKEN_ADMIN=... \
@@ -53,11 +60,31 @@ async function call(method, path, token) {
   return res.status;
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Poll until the route answers `want` (breaker state may still be
+ *  propagating through KV), or the budget runs out. Returns the last
+ *  status seen. Transient fetch errors count as "not yet". */
+async function pollStatus(method, path, token, want, budgetMs = 90000) {
+  const deadline = Date.now() + budgetMs;
+  let last = 0;
+  for (;;) {
+    try {
+      last = await call(method, path, token);
+    } catch {
+      last = 0;
+    }
+    if (last === want || Date.now() >= deadline) return last;
+    await sleep(3000);
+  }
+}
+
 async function main() {
   console.log(`Target: ${base}\n`);
 
-  // 1. Health
-  const health = await call("GET", "/health", "");
+  // 1. Health (polled: a previous drill's breaker release may still
+  // be propagating through KV)
+  const health = await pollStatus("GET", "/health", "", 200, 30000);
   report("GET /health -> 200", health === 200, `got ${health}`);
 
   // 2. No token refused
@@ -87,11 +114,11 @@ async function main() {
       report("POST /admin/breaker/on with admin token -> 200", on === 200, `got ${on}`);
       breakerLeftOn = on === 200;
 
-      const healthOn = await call("GET", "/health", "");
+      const healthOn = await pollStatus("GET", "/health", "", 503);
       report("breaker on: GET /health -> 503", healthOn === 503, `got ${healthOn}`);
 
       if (tokens.read) {
-        const duringOn = await call("GET", "/switchbot/devices", tokens.read);
+        const duringOn = await pollStatus("GET", "/switchbot/devices", tokens.read, 503);
         report("breaker on: valid read token still -> 503", duringOn === 503, `got ${duringOn}`);
       }
 
@@ -99,7 +126,7 @@ async function main() {
       report("breaker on: POST /admin/breaker/off stays reachable -> 200", off === 200, `got ${off}`);
       breakerLeftOn = off !== 200;
 
-      const healthAfter = await call("GET", "/health", "");
+      const healthAfter = await pollStatus("GET", "/health", "", 200);
       report("breaker off: GET /health recovers -> 200", healthAfter === 200, `got ${healthAfter}`);
     } finally {
       if (breakerLeftOn) {
