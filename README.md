@@ -137,7 +137,15 @@ on). A vendor refusing the bridge's own credentials is reported as
 502 with a `vendor_*` code (vendor status and body preserved in the
 payload), never returned as-is, so the two failure kinds stay
 distinguishable. SwitchBot errors reported inside an HTTP 200 body
-(`statusCode != 100`) likewise surface as 502 `vendor_error`.
+(`statusCode != 100`) likewise surface as 502 `vendor_error`, and a
+vendor that cannot be reached at all (network failure) as 502
+`vendor_unreachable`. The bridge's own unexpected failures answer a
+JSON 500 `internal_error` — so a bare, non-JSON 5xx can only come from
+the runtime around the Worker, never from the bridge or a vendor.
+
+Allow-list note: entries are colon-separated, so a device id or command
+name that itself contains a ":" cannot be registered in
+`SWITCHBOT_ALLOWED_COMMANDS` (such entries are ignored, failing closed).
 
 ## Quick start
 

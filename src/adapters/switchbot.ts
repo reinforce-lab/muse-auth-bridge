@@ -60,10 +60,18 @@ async function call(ctx: AdapterContext, path: string, init: RequestInit = {}): 
   }
   const headers = await buildSwitchBotHeaders(env.SWITCHBOT_TOKEN, env.SWITCHBOT_SECRET);
   const base = (env.SWITCHBOT_API_BASE ?? DEFAULT_BASE).replace(/\/$/, "");
-  const res = await (ctx.fetchFn ?? fetch)(`${base}${path}`, {
-    ...init,
-    headers: { ...headers, ...(init.headers ?? {}) },
-  });
+  let res: Response;
+  try {
+    res = await (ctx.fetchFn ?? fetch)(`${base}${path}`, {
+      ...init,
+      headers: { ...headers, ...(init.headers ?? {}) },
+    });
+  } catch {
+    // A rejected fetch (network failure, DNS, ...) must not escape as an
+    // unhandled exception: the runtime would answer a bare, non-JSON
+    // 500 and the failure would be indistinguishable from a bridge bug.
+    return errorJson(502, "vendor_unreachable", "Could not reach the SwitchBot API (network error)");
+  }
   // SwitchBot also reports errors inside an HTTP 200 body, as
   // { statusCode: <not 100>, message: ... } (e.g. 161 = device offline).
   // Passing that through as success would hide failures from callers,

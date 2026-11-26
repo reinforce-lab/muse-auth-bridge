@@ -17,8 +17,9 @@ export function errorJson(status: number, code: string, message: string): Respon
  *  indistinguishable from the bridge's own 401/403/429, which breaks
  *  symptom-based troubleshooting. They are therefore mapped to 502 with
  *  a vendor_* code, keeping the vendor's status and body in the payload.
- *  Vendor 5xx passes through: the bridge never emits a bare 500 itself,
- *  so it stays distinguishable. */
+ *  Vendor 5xx passes through: the bridge's own failures are always JSON
+ *  (500 internal_error from the entry boundary, 502 vendor_* for vendor
+ *  failures), so a vendor 5xx stays distinguishable from both. */
 export async function passthrough(res: Response): Promise<Response> {
   const text = await res.text();
   if (res.status >= 400 && res.status < 500) {

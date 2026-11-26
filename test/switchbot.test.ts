@@ -150,6 +150,16 @@ describe("switchbot write allow-lists", () => {
     expect(body.vendorStatus).toBe(429);
   });
 
+  it("a rejected vendor fetch becomes 502 vendor_unreachable, not an unhandled exception", async () => {
+    const env: Env = { SWITCHBOT_TOKEN: "tok", SWITCHBOT_SECRET: "sec" };
+    const throwingFetch = (async () => {
+      throw new TypeError("fetch failed");
+    }) as unknown as typeof fetch;
+    const res = await switchBotRoutes.listDevices({ env, fetchFn: throwingFetch });
+    expect(res.status).toBe(502);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("vendor_unreachable");
+  });
+
   it("commandType is part of the allow-list key: customize needs an explicit entry", async () => {
     expect(commandAllowed("dev1:turnOn", "dev1", "turnOn")).toBe(true);
     expect(commandAllowed("dev1:turnOn", "dev1", "turnOn", "customize")).toBe(false);

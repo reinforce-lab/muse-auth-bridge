@@ -82,6 +82,19 @@ describe("worker pipeline", () => {
     expect(res.status).toBe(503);
   });
 
+  it("an unexpected internal failure answers a JSON 500 internal_error", async () => {
+    const evilEnv: Env = { ...env };
+    Object.defineProperty(evilEnv, "BRIDGE_KV", {
+      get() {
+        throw new Error("boom");
+      },
+    });
+    const res = await worker.fetch(new Request("https://bridge.example/health"), evilEnv);
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("internal_error");
+  });
+
   it("malformed percent-encoding in a path parameter is a 400, not a crash", async () => {
     const res = await call("/switchbot/devices/%E0%A4%A/status", "read-tok");
     expect(res.status).toBe(400);

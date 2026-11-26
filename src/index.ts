@@ -65,6 +65,20 @@ const ROUTES: Route[] = [
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    try {
+      return await handleRequest(request, env);
+    } catch {
+      // Last-resort boundary: an unexpected failure inside the bridge
+      // answers a JSON 500 internal_error. A bare, non-JSON 5xx can then
+      // only come from the runtime around the Worker, and a vendor 5xx
+      // (passed through by the adapters) stays distinguishable from
+      // both — which is what makes symptom-based triage possible.
+      return errorJson(500, "internal_error", "Unexpected internal error in the bridge");
+    }
+  },
+};
+
+async function handleRequest(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, "") || "/";
 
@@ -127,5 +141,4 @@ export default {
       return route.handler({ env, request }, params);
     }
     return errorJson(404, "not_found", "No such route on the bridge");
-  },
-};
+}

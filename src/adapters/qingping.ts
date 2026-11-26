@@ -109,22 +109,48 @@ async function call(ctx: AdapterContext, path: string, params: Record<string, st
       headers: { Authorization: `Bearer ${token}` },
     });
   };
-  try {
-    let token = await getQingpingAccessToken(ctx);
-    let res = await doFetch(token);
-    if (res.status === 401) {
-      // One retry with a fresh token; a second 401 is the vendor's answer.
-      token = await getQingpingAccessToken(ctx, true);
-      res = await doFetch(token);
-    }
-    return passthrough(res);
-  } catch (err) {
+  // Token acquisition and the data call fail differently, and the
+  // runbook sends the operator to different remedies for each, so their
+  // catches stay separate: a network failure on the data call is
+  // vendor_unreachable, never "could not obtain a token".
+  const authFailure = (err: unknown): Response => {
     const message = err instanceof Error ? err.message : "unknown";
     if (message === "adapter_not_configured") {
       return errorJson(501, "adapter_not_configured", "Qingping credentials are not configured on the bridge");
     }
     return errorJson(502, "vendor_auth_failed", `Could not obtain a Qingping access token (${message})`);
+  };
+  const attempt = async (token: string): Promise<Response | null> => {
+    try {
+      return await doFetch(token);
+    } catch {
+      return null;
+    }
+  };
+
+  let token: string;
+  try {
+    token = await getQingpingAccessToken(ctx);
+  } catch (err) {
+    return authFailure(err);
   }
+  let res = await attempt(token);
+  if (res === null) {
+    return errorJson(502, "vendor_unreachable", "Could not reach the Qingping API (network error)");
+  }
+  if (res.status === 401) {
+    // One retry with a fresh token; a second 401 is the vendor's answer.
+    try {
+      token = await getQingpingAccessToken(ctx, true);
+    } catch (err) {
+      return authFailure(err);
+    }
+    res = await attempt(token);
+    if (res === null) {
+      return errorJson(502, "vendor_unreachable", "Could not reach the Qingping API (network error)");
+    }
+  }
+  return passthrough(res);
 }
 
 export const qingpingRoutes = {

@@ -64,6 +64,30 @@ describe("qingping adapter", () => {
     expect(res.status).toBe(400);
   });
 
+  it("reports a token-endpoint network failure as vendor_auth_failed", async () => {
+    const throwingFetch = (async () => {
+      throw new TypeError("fetch failed");
+    }) as unknown as typeof fetch;
+    const res = await qingpingRoutes.listDevices({ env, fetchFn: throwingFetch });
+    expect(res.status).toBe(502);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("vendor_auth_failed");
+  });
+
+  it("reports a data-endpoint network failure as vendor_unreachable, not an auth failure", async () => {
+    const fetchFn = (async (url: string) => {
+      if (url.includes("oauth.cleargrass.com")) {
+        return new Response(JSON.stringify({ access_token: "at-1", expires_in: 7200 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      throw new TypeError("fetch failed");
+    }) as unknown as typeof fetch;
+    const res = await qingpingRoutes.listDevices({ env, fetchFn });
+    expect(res.status).toBe(502);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("vendor_unreachable");
+  });
+
   it("returns 501 when credentials are not configured", async () => {
     const res = await qingpingRoutes.listDevices({ env: {} });
     expect(res.status).toBe(501);
