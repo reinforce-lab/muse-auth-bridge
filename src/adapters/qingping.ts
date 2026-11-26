@@ -43,13 +43,17 @@ export interface AdapterContext {
  * runbook prescribes a different remedy for each kind and lumping them
  * together as "auth failed" sends the operator to reissue keys during
  * what is actually a vendor outage or a network failure:
- *   unreachable — the fetch itself failed (network, DNS)
- *   auth        — the vendor refused the credentials (401/403, other 4xx)
- *   server      — the vendor's token endpoint is failing (5xx, or a
- *                 response without a token)
- *   internal    — the bridge's own token cache (KV) failed
+ *   unreachable   — the fetch itself failed (network, DNS)
+ *   auth          — the vendor refused the credentials (401/403)
+ *   rate_limited  — the token endpoint answered 429
+ *   client        — any other 4xx from the token endpoint
+ *   server        — the vendor's token endpoint is failing (5xx, or a
+ *                   response without a token)
+ * The token cache is deliberately NOT in this list: caching is an
+ * optimisation, so cache failures degrade to "no cache" / "not stored"
+ * and never fail a request that could otherwise proceed.
  */
-export type TokenFailureKind = "unreachable" | "auth" | "server" | "internal" | "not_configured";
+export type TokenFailureKind = "unreachable" | "auth" | "rate_limited" | "client" | "server" | "not_configured";
 
 export class TokenFailure extends Error {
   readonly kind: TokenFailureKind;
@@ -65,7 +69,10 @@ async function readCached(env: Env): Promise<CachedToken | null> {
     try {
       raw = await env.BRIDGE_KV.get(KV_TOKEN_KEY);
     } catch {
-      throw new TokenFailure("internal", "token cache read failed");
+      // Best-effort: a failed cache read is just a cache miss; a fresh
+      // token can still be fetched.
+      console.warn("qingping token cache read failed; treating as a miss");
+      return null;
     }
     if (raw) {
       try {
@@ -86,7 +93,9 @@ async function writeCached(env: Env, token: CachedToken): Promise<void> {
     try {
       await env.BRIDGE_KV.put(KV_TOKEN_KEY, JSON.stringify(token), { expirationTtl: ttl });
     } catch {
-      throw new TokenFailure("internal", "token cache write failed");
+      // Best-effort: the token itself is already in hand and usable;
+      // failing to store it only costs a refetch next time.
+      console.warn("qingping token cache write failed; continuing without caching");
     }
   }
 }
@@ -118,7 +127,9 @@ export async function getQingpingAccessToken(ctx: AdapterContext, forceRefresh =
   }
   if (!res.ok) {
     if (res.status >= 500) throw new TokenFailure("server", `token_request_failed:${res.status}`);
-    throw new TokenFailure("auth", `token_request_failed:${res.status}`);
+    if (res.status === 429) throw new TokenFailure("rate_limited", "token_request_failed:429");
+    if (res.status === 401 || res.status === 403) throw new TokenFailure("auth", `token_request_failed:${res.status}`);
+    throw new TokenFailure("client", `token_request_failed:${res.status}`);
   }
   let data: { access_token?: string; expires_in?: number };
   try {
@@ -165,8 +176,10 @@ async function call(ctx: AdapterContext, path: string, params: Record<string, st
           return errorJson(502, "vendor_unreachable", "Could not reach the Qingping token endpoint (network error)");
         case "server":
           return errorJson(502, "vendor_server_error", `Qingping token endpoint is failing (${err.message})`);
-        case "internal":
-          return errorJson(500, "internal_error", `Bridge token cache failure (${err.message})`);
+        case "rate_limited":
+          return errorJson(502, "vendor_rate_limited", "Qingping token endpoint is rate limiting the bridge (vendor status 429)");
+        case "client":
+          return errorJson(502, "vendor_client_error", `Qingping token endpoint rejected the request (${err.message})`);
         case "auth":
           return errorJson(502, "vendor_auth_failed", `Could not obtain a Qingping access token (${err.message})`);
       }

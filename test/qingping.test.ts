@@ -88,19 +88,39 @@ describe("qingping adapter", () => {
     expect(((await serverRes.json()) as { error: { code: string } }).error.code).toBe("vendor_server_error");
   });
 
-  it("reports a token cache (KV) failure as 500 internal_error", async () => {
+  it("treats token cache (KV) failures as best-effort and still serves the request", async () => {
     const kvEnv: Env = {
       ...env,
       BRIDGE_KV: {
         get: async () => {
           throw new Error("kv down");
         },
-        put: async () => undefined,
+        put: async () => {
+          throw new Error("kv down");
+        },
       } as unknown as KVNamespace,
     };
-    const res = await qingpingRoutes.listDevices({ env: kvEnv, fetchFn: mockFetch([]) });
-    expect(res.status).toBe(500);
-    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("internal_error");
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const res = await qingpingRoutes.listDevices({ env: kvEnv, fetchFn: mockFetch(calls) });
+    expect(res.status).toBe(200);
+    // The read failure was a miss, so a fresh token was fetched and used.
+    expect(calls.some((c) => c.url.includes("oauth.cleargrass.com"))).toBe(true);
+    expect(calls.some((c) => c.url.includes("apis.cleargrass.com"))).toBe(true);
+  });
+
+  it("classifies a token-endpoint 429 as vendor_rate_limited and other 4xx as vendor_client_error", async () => {
+    const statusFetch = (status: number) =>
+      (async () =>
+        new Response(JSON.stringify({ message: "x" }), {
+          status,
+          headers: { "content-type": "application/json" },
+        })) as unknown as typeof fetch;
+    const limited = await qingpingRoutes.listDevices({ env, fetchFn: statusFetch(429) });
+    expect(limited.status).toBe(502);
+    expect(((await limited.json()) as { error: { code: string } }).error.code).toBe("vendor_rate_limited");
+    const client = await qingpingRoutes.listDevices({ env, fetchFn: statusFetch(400) });
+    expect(client.status).toBe(502);
+    expect(((await client.json()) as { error: { code: string } }).error.code).toBe("vendor_client_error");
   });
 
   it("reports a data-endpoint network failure as vendor_unreachable, not an auth failure", async () => {
