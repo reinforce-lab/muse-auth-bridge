@@ -150,6 +150,15 @@ describe("switchbot write allow-lists", () => {
     expect(body.vendorStatus).toBe(429);
   });
 
+  it("maps a vendor 500 to 502 vendor_server_error, keeping status-based triage clean", async () => {
+    const env: Env = { SWITCHBOT_TOKEN: "tok", SWITCHBOT_SECRET: "sec" };
+    const res = await switchBotRoutes.listDevices({ env, fetchFn: jsonFetch(500, { message: "boom" }) });
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as { error: { code: string }; vendorStatus: number };
+    expect(body.error.code).toBe("vendor_server_error");
+    expect(body.vendorStatus).toBe(500);
+  });
+
   it("a rejected vendor fetch becomes 502 vendor_unreachable, not an unhandled exception", async () => {
     const env: Env = { SWITCHBOT_TOKEN: "tok", SWITCHBOT_SECRET: "sec" };
     const throwingFetch = (async () => {

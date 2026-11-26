@@ -136,7 +136,9 @@ on). A vendor refusing the bridge's own credentials is reported as
 `vendor_rate_limited`** — in general, vendor 4xx answers are mapped to
 502 with a `vendor_*` code (vendor status and body preserved in the
 payload), never returned as-is, so the two failure kinds stay
-distinguishable. SwitchBot errors reported inside an HTTP 200 body
+distinguishable. Vendor 5xx answers are likewise mapped to 502
+`vendor_server_error`: after the mapping, triage is purely
+status-based — 4xx and JSON 500 are the bridge, 502 is the vendor. SwitchBot errors reported inside an HTTP 200 body
 (`statusCode != 100`) likewise surface as 502 `vendor_error`, and a
 vendor that cannot be reached at all (network failure) as 502
 `vendor_unreachable`. The bridge's own unexpected failures answer a

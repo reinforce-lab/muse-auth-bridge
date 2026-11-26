@@ -112,7 +112,8 @@ node scripts/smoke-test.mjs
 | 502 `vendor_auth_error` | ベンダー側が橋の資格情報を拒否した（ベンダーのトークン無効、日次上限超過など）。本文の `vendorStatus` と `vendorBody` を確認 |
 | 502 `vendor_rate_limited` | ベンダー側のレート制限（ベンダーの429）。橋自身のレート制限（429 `rate_limited`）とは別物 |
 | 502 `vendor_unreachable` | ベンダーへ通信自体が届かなかった（ネットワーク障害、ベンダー側のダウン等）。資格情報の問題ではない |
-| 502 `vendor_auth_failed`（Qingping） | アクセストークンの取得に失敗。App Key / Secret の再発行有無を確認（データ取得側の通信失敗は `vendor_unreachable` になる） |
+| 502 `vendor_auth_failed`（Qingping） | アクセストークンの取得をベンダーに拒否された（401/403等）。App Key / Secret の再発行有無を確認。トークン取得口の通信失敗は `vendor_unreachable`、5xx は `vendor_server_error` になるので、このコードなら鍵の問題として扱ってよい |
+| 502 `vendor_server_error` | ベンダー側のサーバ障害（ベンダーの5xx）。橋の問題ではないので、ベンダー側の復旧を待つ |
 | 500 `internal_error` | 橋自身の想定外の失敗。Workers のログで例外を確認。JSON でない素の5xxは橋からもベンダーからも出ないので、来たら Worker の外側（ランタイム）の問題 |
 | 502 `vendor_error` | ベンダーが本文でエラーを返した（SwitchBot の statusCode 161 = デバイスオフライン等） |
 | 読み取りは通るが書き込みが 403 | read トークンで書き込みルートを叩いている（役割の分離どおり） |

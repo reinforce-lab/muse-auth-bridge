@@ -69,10 +69,10 @@ export default {
       return await handleRequest(request, env);
     } catch {
       // Last-resort boundary: an unexpected failure inside the bridge
-      // answers a JSON 500 internal_error. A bare, non-JSON 5xx can then
-      // only come from the runtime around the Worker, and a vendor 5xx
-      // (passed through by the adapters) stays distinguishable from
-      // both — which is what makes symptom-based triage possible.
+      // answers a JSON 500 internal_error. Vendor failures are all 502
+      // vendor_* (the adapters map them), so a bare, non-JSON 5xx can
+      // only come from the runtime around the Worker — which is what
+      // makes symptom-based triage possible.
       return errorJson(500, "internal_error", "Unexpected internal error in the bridge");
     }
   },

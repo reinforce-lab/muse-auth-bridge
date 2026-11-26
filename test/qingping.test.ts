@@ -64,13 +64,43 @@ describe("qingping adapter", () => {
     expect(res.status).toBe(400);
   });
 
-  it("reports a token-endpoint network failure as vendor_auth_failed", async () => {
+  it("reports a token-endpoint network failure as vendor_unreachable, not an auth failure", async () => {
     const throwingFetch = (async () => {
       throw new TypeError("fetch failed");
     }) as unknown as typeof fetch;
     const res = await qingpingRoutes.listDevices({ env, fetchFn: throwingFetch });
     expect(res.status).toBe(502);
-    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("vendor_auth_failed");
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("vendor_unreachable");
+  });
+
+  it("classifies token-endpoint statuses: 401 is auth, 503 is the vendor's server", async () => {
+    const statusFetch = (status: number) =>
+      (async () =>
+        new Response(JSON.stringify({ message: "x" }), {
+          status,
+          headers: { "content-type": "application/json" },
+        })) as unknown as typeof fetch;
+    const authRes = await qingpingRoutes.listDevices({ env, fetchFn: statusFetch(401) });
+    expect(authRes.status).toBe(502);
+    expect(((await authRes.json()) as { error: { code: string } }).error.code).toBe("vendor_auth_failed");
+    const serverRes = await qingpingRoutes.listDevices({ env, fetchFn: statusFetch(503) });
+    expect(serverRes.status).toBe(502);
+    expect(((await serverRes.json()) as { error: { code: string } }).error.code).toBe("vendor_server_error");
+  });
+
+  it("reports a token cache (KV) failure as 500 internal_error", async () => {
+    const kvEnv: Env = {
+      ...env,
+      BRIDGE_KV: {
+        get: async () => {
+          throw new Error("kv down");
+        },
+        put: async () => undefined,
+      } as unknown as KVNamespace,
+    };
+    const res = await qingpingRoutes.listDevices({ env: kvEnv, fetchFn: mockFetch([]) });
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("internal_error");
   });
 
   it("reports a data-endpoint network failure as vendor_unreachable, not an auth failure", async () => {
