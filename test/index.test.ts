@@ -81,4 +81,9 @@ describe("worker pipeline", () => {
     );
     expect(res.status).toBe(503);
   });
+
+  it("malformed percent-encoding in a path parameter is a 400, not a crash", async () => {
+    const res = await call("/switchbot/devices/%E0%A4%A/status", "read-tok");
+    expect(res.status).toBe(400);
+  });
 });

@@ -26,7 +26,11 @@
  * Usage:
  *   BRIDGE_URL=https://muse-auth-bridge.<subdomain>.workers.dev \
  *   BRIDGE_TOKEN_READ=... BRIDGE_TOKEN_WRITE=... BRIDGE_TOKEN_ADMIN=... \
- *   node scripts/smoke-test.mjs [--no-breaker]
+ *   node scripts/smoke-test.mjs [--no-breaker] [--expect-configured]
+ *
+ * --expect-configured: use after vendor secrets have been set on the
+ * Worker. The read-route check then requires a real 200, so a missing
+ * secret (501) fails the test instead of passing silently.
  *
  * Exit code 0 when every executed check passes, 1 otherwise.
  * No dependencies; Node 18+ (global fetch).
@@ -39,6 +43,7 @@ const tokens = {
   admin: process.env.BRIDGE_TOKEN_ADMIN ?? "",
 };
 const runBreaker = !process.argv.includes("--no-breaker") && Boolean(tokens.admin);
+const expectConfigured = process.argv.includes("--expect-configured");
 
 let failures = 0;
 function report(name, ok, detail = "") {
@@ -94,11 +99,19 @@ async function main() {
   // 3. Read token reaches an adapter route
   if (tokens.read) {
     const read = await call("GET", "/switchbot/devices", tokens.read);
-    report(
-      "GET /switchbot/devices with read token -> 200 or 501",
-      read === 200 || read === 501,
-      `got ${read}${read === 501 ? ", adapter not configured yet" : ""}`,
-    );
+    if (expectConfigured) {
+      report(
+        "GET /switchbot/devices with read token -> 200 (configured)",
+        read === 200,
+        `got ${read}${read === 501 ? ", adapter still not configured" : ""}`,
+      );
+    } else {
+      report(
+        "GET /switchbot/devices with read token -> 200 or 501",
+        read === 200 || read === 501,
+        `got ${read}${read === 501 ? ", adapter not configured yet" : ""}`,
+      );
+    }
     // 4. Read token cannot write
     const writeAttempt = await call("POST", "/switchbot/devices/smoke/commands", tokens.read);
     report("POST commands with read token -> 403", writeAttempt === 403, `got ${writeAttempt}`);

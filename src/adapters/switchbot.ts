@@ -64,7 +64,56 @@ async function call(ctx: AdapterContext, path: string, init: RequestInit = {}): 
     ...init,
     headers: { ...headers, ...(init.headers ?? {}) },
   });
+  // SwitchBot also reports errors inside an HTTP 200 body, as
+  // { statusCode: <not 100>, message: ... } (e.g. 161 = device offline).
+  // Passing that through as success would hide failures from callers,
+  // so surface it as a vendor error instead.
+  if (res.status === 200) {
+    try {
+      const body = (await res.clone().json()) as { statusCode?: unknown; message?: unknown };
+      if (typeof body?.statusCode === "number" && body.statusCode !== 100) {
+        return errorJson(
+          502,
+          "vendor_error",
+          `SwitchBot reported an error (statusCode ${body.statusCode}${typeof body.message === "string" ? `: ${body.message}` : ""})`,
+        );
+      }
+    } catch {
+      // Non-JSON body: passthrough below handles it.
+    }
+  }
   return passthrough(res);
+}
+
+/**
+ * Write-surface allow-lists (default: deny everything).
+ *
+ * A write token must not become a universal remote: SwitchBot includes
+ * locks and keypads, whose unlock commands would otherwise be one
+ * leaked token away. Commands are allowed per (deviceId, command)
+ * pair, scenes per scene id. Configure in wrangler.toml [vars]:
+ *   SWITCHBOT_ALLOWED_COMMANDS = "deviceId:turnOn,deviceId:turnOff"
+ *   SWITCHBOT_ALLOWED_SCENES   = "sceneId1,sceneId2"
+ * "*" matches any device / command / scene on that side of the pair.
+ */
+export function commandAllowed(raw: string | undefined, deviceId: string, command: string): boolean {
+  if (!raw) return false;
+  for (const pair of raw.split(",")) {
+    const idx = pair.lastIndexOf(":");
+    if (idx <= 0) continue;
+    const device = pair.slice(0, idx).trim();
+    const cmd = pair.slice(idx + 1).trim();
+    if ((device === "*" || device === deviceId) && (cmd === "*" || cmd === command)) return true;
+  }
+  return false;
+}
+
+export function sceneAllowed(raw: string | undefined, sceneId: string): boolean {
+  if (!raw) return false;
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .some((s) => s === "*" || s === sceneId);
 }
 
 export const switchBotRoutes = {
@@ -77,6 +126,10 @@ export const switchBotRoutes = {
 
   /** POST /switchbot/devices/:id/commands  body: {command, parameter?, commandType?} */
   async deviceCommand(ctx: AdapterContext, deviceId: string, request: Request): Promise<Response> {
+    const { env } = ctx;
+    if (!env.SWITCHBOT_TOKEN || !env.SWITCHBOT_SECRET) {
+      return errorJson(501, "adapter_not_configured", "SwitchBot credentials are not configured on the bridge");
+    }
     let body: unknown;
     try {
       body = await request.json();
@@ -86,6 +139,13 @@ export const switchBotRoutes = {
     const rec = body as { command?: unknown };
     if (typeof rec?.command !== "string" || rec.command.length === 0) {
       return errorJson(400, "invalid_command", "Body must include a non-empty string field: command");
+    }
+    if (!commandAllowed(env.SWITCHBOT_ALLOWED_COMMANDS, deviceId, rec.command)) {
+      return errorJson(
+        403,
+        "command_not_allowed",
+        `Command "${rec.command}" for this device is not on the bridge allow-list (SWITCHBOT_ALLOWED_COMMANDS)`,
+      );
     }
     // Deliberately an allow-listed shape, not a raw proxy: the bridge only
     // forwards the documented command envelope.
@@ -104,9 +164,21 @@ export const switchBotRoutes = {
   listScenes: (ctx: AdapterContext) => call(ctx, "/v1.1/scenes"),
 
   /** POST /switchbot/scenes/:id/execute */
-  executeScene: (ctx: AdapterContext, sceneId: string) =>
-    call(ctx, `/v1.1/scenes/${encodeURIComponent(sceneId)}/execute`, {
+  async executeScene(ctx: AdapterContext, sceneId: string): Promise<Response> {
+    const { env } = ctx;
+    if (!env.SWITCHBOT_TOKEN || !env.SWITCHBOT_SECRET) {
+      return errorJson(501, "adapter_not_configured", "SwitchBot credentials are not configured on the bridge");
+    }
+    if (!sceneAllowed(env.SWITCHBOT_ALLOWED_SCENES, sceneId)) {
+      return errorJson(
+        403,
+        "scene_not_allowed",
+        "This scene is not on the bridge allow-list (SWITCHBOT_ALLOWED_SCENES)",
+      );
+    }
+    return call(ctx, `/v1.1/scenes/${encodeURIComponent(sceneId)}/execute`, {
       method: "POST",
       body: JSON.stringify({}),
-    }),
+    });
+  },
 };

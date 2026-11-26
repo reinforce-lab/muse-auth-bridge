@@ -118,7 +118,13 @@ export default {
       if (!roleSatisfies(auth.role, route.requiredRole)) {
         return errorJson(403, "forbidden", `This route requires the ${route.requiredRole} role`);
       }
-      return route.handler({ env, request }, match.slice(1).map((g) => decodeURIComponent(g ?? "")));
+      let params: string[];
+      try {
+        params = match.slice(1).map((g) => decodeURIComponent(g ?? ""));
+      } catch {
+        return errorJson(400, "invalid_path", "Malformed percent-encoding in path");
+      }
+      return route.handler({ env, request }, params);
     }
     return errorJson(404, "not_found", "No such route on the bridge");
   },

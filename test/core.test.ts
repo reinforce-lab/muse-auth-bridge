@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { authenticate, constantTimeEqual, loadTokens } from "../src/core/auth";
+import { isBreakerOn, resetBreakerForTest, setBreaker } from "../src/core/breaker";
 import { RateLimiter, parseRateLimit } from "../src/core/ratelimit";
 import type { Env } from "../src/env";
 
@@ -70,5 +71,45 @@ describe("rate limiter", () => {
     expect(parseRateLimit("x")).toBe(60);
     expect(parseRateLimit(undefined)).toBe(60);
     expect(parseRateLimit("0")).toBe(0);
+  });
+});
+
+describe("breaker KV robustness", () => {
+  function kvStub(behavior: { get?: () => Promise<string | null>; put?: () => Promise<void> }): KVNamespace {
+    return {
+      get: behavior.get ?? (async () => null),
+      put: behavior.put ?? (async () => undefined),
+    } as unknown as KVNamespace;
+  }
+
+  it("a throwing KV read never takes the bridge down", async () => {
+    resetBreakerForTest();
+    const brokenEnv: Env = {
+      BRIDGE_KV: kvStub({
+        get: async () => {
+          throw new Error("kv read limit exceeded");
+        },
+      }),
+    };
+    await expect(isBreakerOn(brokenEnv)).resolves.toBe(false);
+  });
+
+  it("reads the KV flag, and a throwing KV write reports not durable", async () => {
+    resetBreakerForTest();
+    const onEnv: Env = { BRIDGE_KV: kvStub({ get: async () => "1" }) };
+    await expect(isBreakerOn(onEnv)).resolves.toBe(true);
+
+    resetBreakerForTest();
+    const putFails: Env = {
+      BRIDGE_KV: kvStub({
+        put: async () => {
+          throw new Error("kv write failed");
+        },
+      }),
+    };
+    await expect(setBreaker(putFails, true)).resolves.toEqual({ durable: false });
+    // The in-isolate state still flipped, so this isolate stops.
+    await expect(isBreakerOn(putFails)).resolves.toBe(true);
+    resetBreakerForTest();
   });
 });

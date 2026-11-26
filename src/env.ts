@@ -11,10 +11,14 @@ export interface Env {
   BRIDGE_DISABLED?: string;
   RATE_LIMIT_PER_MINUTE?: string;
 
-  // SwitchBot adapter (secrets)
+  // SwitchBot adapter (secrets + write allow-lists)
   SWITCHBOT_TOKEN?: string;
   SWITCHBOT_SECRET?: string;
   SWITCHBOT_API_BASE?: string;
+  /** Comma-separated "deviceId:command" pairs ("*" wildcards). Unset = no commands allowed. */
+  SWITCHBOT_ALLOWED_COMMANDS?: string;
+  /** Comma-separated scene ids ("*" = all). Unset = no scenes allowed. */
+  SWITCHBOT_ALLOWED_SCENES?: string;
 
   // Qingping adapter (secrets + var)
   QINGPING_APP_KEY?: string;

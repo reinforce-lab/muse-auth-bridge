@@ -120,17 +120,22 @@ are — and which ones only practice can write.
 | GET | `/` | public | Service description |
 | GET | `/switchbot/devices` | read | Device + infrared remote list |
 | GET | `/switchbot/devices/:id/status` | read | |
-| POST | `/switchbot/devices/:id/commands` | write | Body: `{ command, parameter?, commandType? }` |
+| POST | `/switchbot/devices/:id/commands` | write | Body: `{ command, parameter?, commandType? }`. **Allow-listed**: only (device, command) pairs in `SWITCHBOT_ALLOWED_COMMANDS` pass; unset = nothing passes |
 | GET | `/switchbot/scenes` | read | |
-| POST | `/switchbot/scenes/:id/execute` | write | |
+| POST | `/switchbot/scenes/:id/execute` | write | **Allow-listed**: only scene ids in `SWITCHBOT_ALLOWED_SCENES` pass; unset = nothing passes |
 | GET | `/qingping/devices` | read | Latest readings for all devices |
 | GET | `/qingping/history?mac=&start_time=&end_time=` | read | Unix seconds |
 | GET | `/admin/status` | admin | |
 | POST | `/admin/breaker/on` · `/off` | admin | The `off` route stays reachable while the breaker is on — a switch you cannot release is a trap |
 
 Errors are JSON: `{ "error": { "code": "...", "message": "..." } }`
-(401 unauthorized, 403 wrong role, 429 rate limited, 501 adapter not
-configured, 503 breaker on).
+(401 unauthorized — always the *bridge* token; 403 wrong role or not
+allow-listed, 429 rate limited, 501 adapter not configured, 503 breaker
+on). A vendor refusing the bridge's own credentials is reported as
+**502 `vendor_auth_error`** (vendor status and body preserved in the
+payload), never as 401, so the two failure kinds stay distinguishable.
+SwitchBot errors reported inside an HTTP 200 body (`statusCode != 100`)
+likewise surface as 502 `vendor_error`.
 
 ## Quick start
 
@@ -188,6 +193,8 @@ everything answer 503, flip it off, watch recovery) ships in
 BRIDGE_URL=https://muse-auth-bridge.<your-subdomain>.workers.dev \
 BRIDGE_TOKEN_READ=... BRIDGE_TOKEN_WRITE=... BRIDGE_TOKEN_ADMIN=... \
 node scripts/smoke-test.mjs          # add --no-breaker to skip the drill
+                                     # add --expect-configured once vendor
+                                     # secrets are set (501 then fails)
 ```
 
 Run it after every deploy and every secret rotation. It also works
@@ -230,7 +237,9 @@ against a live account:
 
 ## Repository status
 
-Pre-release (v0.1). Licensed under the **MIT License** — see `LICENSE`.
+v0.2 — hardened after an external code review (write allow-lists,
+breaker KV-failure tolerance, vendor error mapping). Licensed under the
+**MIT License** — see `LICENSE`.
 The design notes that led here live in `DESIGN.md`.
 
 ## Security notes

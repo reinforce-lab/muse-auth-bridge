@@ -1,1 +1,22 @@
-{"description":"Auth translation layer for Muse custom connectors: one Bearer token in, signed vendor API requests out (SwitchBot, Qingping, ...)","devDependencies":{"@cloudflare/workers-types":"^4.20241127.0","@types/node":"^26.6.11","typescript":"^5.7.2","vitest":"^2.1.5","wrangler":"^3.91.0"},"license":"MIT","name":"muse-auth-bridge","private":false,"scripts":{"deploy":"wrangler deploy","dev":"wrangler dev","test":"vitest run","test:watch":"vitest","typecheck":"tsc --noEmit"},"type":"module","version":"0.1.0"}
+{
+  "description": "Auth translation layer for Muse custom connectors: one Bearer token in, signed vendor API requests out (SwitchBot, Qingping, ...)",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "@types/node": "^26.6.11",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.5",
+    "wrangler": "^3.91.0"
+  },
+  "license": "MIT",
+  "name": "muse-auth-bridge",
+  "private": false,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "type": "module",
+  "version": "0.2.0"
+}

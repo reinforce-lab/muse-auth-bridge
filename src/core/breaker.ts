@@ -10,25 +10,50 @@ import type { Env } from "../env";
  *
  * Sources, in order: static env (BRIDGE_DISABLED=true), KV flag (durable,
  * set via the admin API), in-isolate memory (admin API without KV).
+ *
+ * Robustness rules (learned from review, 2026-11-26):
+ * - The breaker check runs before auth on every request, so a KV read
+ *   failure must never take the bridge down. KV errors fall back to the
+ *   last known state, then to the in-isolate flag.
+ * - KV reads are cached for a few seconds per isolate. Breaker flips
+ *   already propagate through KV with up to ~60s of eventual
+ *   consistency, so a 3s cache changes nothing operationally, but it
+ *   keeps unauthenticated traffic from amplifying into KV reads.
  */
 let isolateBreaker = false;
+let kvCache: { value: boolean; at: number } | null = null;
 
 const KV_KEY = "breaker:v1";
+const CACHE_MS = 3_000;
 
 export async function isBreakerOn(env: Env): Promise<boolean> {
   if ((env.BRIDGE_DISABLED ?? "").toLowerCase() === "true") return true;
   if (env.BRIDGE_KV) {
-    const v = await env.BRIDGE_KV.get(KV_KEY);
-    if (v !== null) return v === "1";
+    const now = Date.now();
+    if (kvCache && now - kvCache.at < CACHE_MS) return kvCache.value;
+    try {
+      const v = await env.BRIDGE_KV.get(KV_KEY);
+      if (v !== null) {
+        kvCache = { value: v === "1", at: now };
+        return kvCache.value;
+      }
+    } catch {
+      if (kvCache) return kvCache.value;
+    }
   }
   return isolateBreaker;
 }
 
 export async function setBreaker(env: Env, on: boolean): Promise<{ durable: boolean }> {
   isolateBreaker = on;
+  kvCache = { value: on, at: Date.now() };
   if (env.BRIDGE_KV) {
-    await env.BRIDGE_KV.put(KV_KEY, on ? "1" : "0");
-    return { durable: true };
+    try {
+      await env.BRIDGE_KV.put(KV_KEY, on ? "1" : "0");
+      return { durable: true };
+    } catch {
+      return { durable: false };
+    }
   }
   return { durable: false };
 }
@@ -36,4 +61,5 @@ export async function setBreaker(env: Env, on: boolean): Promise<{ durable: bool
 /** Test hook. */
 export function resetBreakerForTest(): void {
   isolateBreaker = false;
+  kvCache = null;
 }
